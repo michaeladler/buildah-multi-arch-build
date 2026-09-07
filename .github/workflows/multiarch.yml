@@ -1,0 +1,52 @@
+name: Multiarch build
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-multiarch-containerfile:
+    name: Build multi-architecture image using Containerfile
+    env:
+      IMAGE_NAME: hello-world-multiarch
+      IMAGE_TAG: latest
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install qemu dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3.1.0
+        id: build_image_multiarch
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: latest v1
+          # NOTE: arch: results in TARGETARCH always being amd64
+          platforms: linux/amd64,linux/arm64
+          containerfiles: |
+            ./Containerfile
+
+      - name: Echo Outputs
+        run: |
+          echo "Image: ${{ steps.build_image_multiarch.outputs.image }}"
+          echo "Tags: ${{ steps.build_image_multiarch.outputs.tags }}"
+          echo "Tagged Image: ${{ steps.build_image_multiarch.outputs.image-with-tag }}"
+
+      - name: Check images created
+        run: buildah images | grep '${{ env.IMAGE_NAME }}'
+
+      - name: Check image metadata
+        run: |
+          set -x
+          buildah inspect ${{ steps.build_image_multiarch.outputs.image }}:${{ env.IMAGE_TAG }} | jq ".OCIv1.architecture"
+          buildah inspect ${{ steps.build_image_multiarch.outputs.image }}:${{ env.IMAGE_TAG }} | jq ".Docker.architecture"
